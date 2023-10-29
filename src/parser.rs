@@ -3,9 +3,13 @@ use std::process::{Command, Stdio};
 use std::io::{self, BufRead};
 
 
-pub fn parse_logs(app_name: &str, current_path: &str) -> Result<(), std::io::Error> {
+pub fn parse_logs(container_name: Option<&str>, current_path: &str) -> Result<(), std::io::Error> {
+    let mut command_args = vec!["compose", "logs", "-f"];
+    if let Some(container) = container_name {
+        command_args.push(container)
+    };
     let child_process = Command::new("docker")
-        .args(["compose", "logs", "-f"])
+        .args(command_args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(Stdio::piped())
@@ -16,9 +20,6 @@ pub fn parse_logs(app_name: &str, current_path: &str) -> Result<(), std::io::Err
     let time_field = "time";
     let pathname_field = "pathname";
     let level_field = "levelname";
-    // if let Err(e) = child_process {
-    //     eprintln!("Error: {}", e);
-    // }
 
     if let Ok(mut child) = child_process {
         // Create readers for stdout and stderr
@@ -33,40 +34,38 @@ pub fn parse_logs(app_name: &str, current_path: &str) -> Result<(), std::io::Err
         for line in stdout_reader.lines() {
             match line {
                 Ok(line) => {
-                    if line.starts_with(app_name) {
-                        match line.find('{') {
-                            Some(json_start) => {
-                                let json_str = &line[json_start..];
-                                if let Ok(json_value) = serde_json::from_str::<Value>(json_str) {
-                                    // Assuming the JSON is an object, you can extract it as a dictionary
-                                    if let Some(json_dict) = json_value.as_object() {
-                                        let mut unescaped_message: String = String::new();
-                                        let mut unescaped_time: String = String::new();
-                                        let mut pathname: String = String::new();
-                                        let mut level: String = String::new();
-                                        if let Some(value) = json_dict.get(find_field) {
-                                            unescaped_message = serde_json::from_str(&value.to_string()).unwrap();
-                                            
-                                        }
-                                        if let Some(value) = json_dict.get(time_field) {
-                                            unescaped_time = serde_json::from_str(&value.to_string()).unwrap();
-                                            
-                                        }
-                                        if let Some(value) = json_dict.get(pathname_field) {
-                                            pathname = value.to_string();
-                                            
-                                        }
-                                        if let Some(value) = json_dict.get(level_field) {
-                                            level = value.to_string();
-                                            
-                                        }
-
-                                        println!("{} {} [{}]: {}", unescaped_time, level, pathname, unescaped_message);
+                    match line.find('{') {
+                        Some(json_start) => {
+                            let json_str = &line[json_start..];
+                            if let Ok(json_value) = serde_json::from_str::<Value>(json_str) {
+                                // Assuming the JSON is an object, you can extract it as a dictionary
+                                if let Some(json_dict) = json_value.as_object() {
+                                    let mut unescaped_message: String = String::new();
+                                    let mut unescaped_time: String = String::new();
+                                    let mut pathname: String = String::new();
+                                    let mut level: String = String::new();
+                                    if let Some(value) = json_dict.get(find_field) {
+                                        unescaped_message = serde_json::from_str(&value.to_string()).unwrap();
+                                        
                                     }
+                                    if let Some(value) = json_dict.get(time_field) {
+                                        unescaped_time = serde_json::from_str(&value.to_string()).unwrap();
+                                        
+                                    }
+                                    if let Some(value) = json_dict.get(pathname_field) {
+                                        pathname = value.to_string();
+                                        
+                                    }
+                                    if let Some(value) = json_dict.get(level_field) {
+                                        level = value.to_string();
+                                        
+                                    }
+
+                                    println!("{} {} [{}]: {}", unescaped_time, level, pathname, unescaped_message);
                                 }
-                            },
-                            None => println!("{}", line),
-                        }
+                            }
+                        },
+                        None => println!("{}", line),
                     }
                 }
                 Err(e) => eprintln!("stderr: {}", e)
